@@ -1,0 +1,1 @@
+# SQL-va-PostgreSQL-Asoslari-2
