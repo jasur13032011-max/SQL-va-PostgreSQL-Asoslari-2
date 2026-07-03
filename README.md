@@ -1,70 +1,53 @@
 # SQL-va-PostgreSQL-Asoslari-2
-PostgreSQL-da ma'lumotlarni saralash (tartiblash), takrorlanadigan qiymatlarni yo'qotish va sahifalash (pagination) amallarini bajarish uchun quyidagi so'rovlar va tushuntirishlardan foydalanishingiz mumkin.
-
-1. Saralash va unikal qiymatlar bilan ishlash
-ASC / DESC bilan tartiblash
-Ma'lumotlarni o'sish (ASC) yoki kamayish (DESC) tartibida saralash:
+PostgreSQL-da so'ralgan hisobotlar va vazifalarni bajarish uchun tayyor SQL so'rovlari quyida keltirilgan. Har bir so'rovning vazifasi tepasidagi sharhlar (-- comment) orqali tushuntirilgan.
 
 SQL
--- Talabalarni ballari bo'yicha kamayish tartibida saralash (eng yuqori ball birinchi)
-SELECT * FROM talabalar ORDER BY joriy_ball DESC;
-Multi-column (Ko'p ustunli) tartiblash
-Bir nechta ustun bo'yicha ketma-ket saralash. Agar birinchi ustundagi qiymatlar teng bo'lsa, tartiblash ikkinchi ustun bo'yicha davom etadi:
-
-SQL
--- Avval yo'nalish bo'yicha alifbo tartibida, keyin bir xil yo'nalishdagilarni yoshi bo'yicha kamayish tartibida saralash
-SELECT yonalish, yosh, ism, familiya 
+-- 1. Top-3 a'lochi: Eng yuqori ball to'plagan 3 ta talabaning ismi va bali
+SELECT ism, joriy_ball 
 FROM talabalar 
-ORDER BY yonalish ASC, yosh DESC;
-NULLS LAST bilan tartiblash
-Agar jadvalda NULL (bo'sh) qiymatlar bo'lsa, o'sish tartibida saralaganda ular eng birinchi chiqib qoladi. Ularni majburiy ravishda ro'yxat oxiriga o'tkazish uchun NULLS LAST ishlatiladi:
+ORDER BY joriy_ball DESC 
+LIMIT 3;
 
-SQL
--- Yoshi bo'yicha o'sish tartibida saralash, yoshi kiritilmaganlarni oxiriga qo'yish
-SELECT ism, familiya, yosh 
+
+-- 2. Filterlangan + tartiblangan ro'yxat: Dasturlash yo'nalishidagi balli 80 dan yuqori talabalarni yoshi bo'yicha o'sish tartibida chiqarish
+SELECT ism, familiya, yosh, yonalish, joriy_ball 
 FROM talabalar 
-ORDER BY yosh ASC NULLS LAST;
-DISTINCT bilan unikal qiymatlar
-Jadvalda takrorlangan qatorlarni olib tashlab, faqat yagona (unikal) qiymatlarni chiqaradi:
+WHERE yonalish = 'Dasturlash' AND joriy_ball > 80 
+ORDER BY yosh ASC;
 
-SQL
--- Universitetda mavjud barcha yo'nalishlar ro'yxatini (takrorlarsiz) chiqarish
-SELECT DISTINCT yonalish FROM talabalar;
-COUNT(DISTINCT) ishlatish
-Unikal qiymatlarning umumiy sonini hisoblash:
 
-SQL
--- Bazada jami nechta turli xil yo'nalish borligini hisoblash
-SELECT COUNT(DISTINCT yonalish) AS unikal_yonalishlar_soni FROM talabalar;
-2. LIMIT va OFFSET bilan sahifalash (Pagination)
-Katta hajmdagi ma'lumotlarni qismlarga bo'lib (sahifalab) ko'rsatish uchun LIMIT va OFFSET ishlatiladi. Faraz qilaylik, har bir sahifada 3 tadan talaba ko'rsatmoqchimiz.
+-- 3. Takrorsiz sinflar (yo'nalishlar) ro'yxati: Universitetdagi barcha unikal yo'nalishlarni alifbo tartibida chiqarish
+SELECT DISTINCT yonalish 
+FROM talabalar 
+ORDER BY yonalish ASC;
 
-3 ta sahifa uchun so'rovlar:
-SQL
--- 1-Sahifa (Dastlabki 3 ta talaba)
-SELECT id, ism, familiya FROM talabalar ORDER BY id ASC LIMIT 3 OFFSET 0;
 
--- 2-Sahifa (Keyingi 3 ta talaba)
-SELECT id, ism, familiya FROM talabalar ORDER BY id ASC LIMIT 3 OFFSET 3;
+-- 4. Yo'qotgan kunlar (kiritilmagan ma'lumotlar) bo'yicha hisobot: Yoshi yoki yo'nalishi kiritilmagan (NULL bo'lgan) talabalar ro'yxati
+SELECT id, ism, familiya, yosh, yonalish 
+FROM talabalar 
+WHERE yosh IS NULL OR yonalish IS NULL;
 
--- 3-Sahifa (Undan keyingi 3 ta talaba)
-SELECT id, ism, familiya FROM talabalar ORDER BY id ASC LIMIT 3 OFFSET 6;
-3. Sahifalash formulasi tushuntirishi
-Dasturlashda (backend yoki veb-saytlarda) dinamik sahifalashni amalga oshirish uchun har safar OFFSET qiymati matematik formula orqali hisoblanadi.
 
-Asosiy qoida:
+-- 5. Eng yosh va eng katta yoshli talabalar: UNION ALL orqali eng kichik va eng katta yoshli talabalarni bitta jadvalda birlashtirish
+(SELECT 'Eng yosh talaba' AS status, ism, familiya, yosh FROM talabalar WHERE yosh IS NOT NULL ORDER BY yosh ASC LIMIT 1)
+UNION ALL
+(SELECT 'Eng katta yoshli talaba' AS status, ism, familiya, yosh FROM talabalar WHERE yosh IS NOT NULL ORDER BY yosh DESC LIMIT 1);
 
-LIMIT — Bir sahifada nechta qator (ma'lumot) ko'rinishi lozimligi.
 
-OFFSET — So'rov boshidan nechta qatorni tashlab yuborish (sakrab o'tish) kerakligi.
+-- 6. Sahifa 2 (LIMIT/OFFSET): Har bir sahifada 3 tadan talaba chiqarilganda, 2-sahifadagi ma'lumotlarni ko'rish (OFFSET = (2-1)*3 = 3)
+SELECT id, ism, familiya 
+FROM talabalar 
+ORDER BY id ASC 
+LIMIT 3 OFFSET 3;
 
-Formula:
-OFFSET=(Sahifa raqami−1)×Sahifadagi elementlar soni (LIMIT)
-Misol ustida tahlil:
-Agar siz har bir sahifada 5 tadan ma'lumot ko'rsatmoqchi bo'lsangiz (LIMIT = 5):
 
-1-sahifa uchun: (1−1)×5=0→OFFSET 0 (Hech narsani tashlamaydi)
+-- 7. Bonus: Dasturlash yo'nalishidagi (shartli ravishda eng yuqori guruh/sinf) top-5 a'lochi talabalar ro'yxati
+SELECT ism, familiya, yonalish, joriy_ball 
+FROM talabalar 
+WHERE yonalish = 'Dasturlash' 
+ORDER BY joriy_ball DESC 
+LIMIT 5;
+Qisqa tushuntirish:
+UNION ALL operatori ikkita alohida SELECT so'rovi natijasini bitta jadvalga ketma-ket birlashtiradi. Birinchi qism eng kichik yoshni, ikkinchi qism esa eng katta yoshni topib, natijani umumlashtiradi.
 
-2-sahifa uchun: (2−1)×5=5→OFFSET 5 (Dastlabki 5 tasini tashlab, 6-sidan boshlaydi)
-
-3-sahifa uchun: (3−1)×5=10→OFFSET 10 (Dastlabki 10 tasini tashlab, 11-sidan boshlaydi)
+LIMIT 3 OFFSET 3 so'rovi dastlabki 3 ta qatorni tashlab yuborib (OFFSET), keyingi 3 ta qatorni (LIMIT) ekranga chiqaradi, bu esa aniq 2-sahifani shakllantiradi.
