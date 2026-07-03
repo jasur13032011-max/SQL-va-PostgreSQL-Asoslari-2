@@ -1,83 +1,67 @@
 # SQL-va-PostgreSQL-Asoslari-2
-PostgreSQL-da ma'lumotlarni guruhlash (GROUP BY), guruhlangan natijalarni filtrlash (HAVING) va qatorlarni jamlash uchun quyidagi so'rovlar hamda qoidalardan foydalanishingiz mumkin.
+PostgreSQL-da jadvallarni o'zaro bog'lash (JOIN) relyatsion ma'lumotlar bazalari bilan ishlashning eng muhim qismidir. Misollarni ko'rishdan oldin, bazamizda 3 ta jadval bor deb tasavvur qilamiz: talabalar, fanlar va ularni bog'laydigan baholar jadvali.
 
-1. Guruhlash va Guruhlarni Filtrlash
-Yo'nalish bo'yicha guruhlash (GROUP BY + COUNT + AVG)
-Har bir yo'nalishda nechta talaba o'qishi va ularning o'rtacha ballini hisoblash:
-
-SQL
-SELECT 
-    yonalish, 
-    COUNT(*) AS talabalar_soni, 
-    ROUND(AVG(joriy_ball), 2) AS ortacha_ball
-FROM talabalar
-GROUP BY yonalish;
-Guruhlarni filtrlash (HAVING)
-WHERE operatori guruhlashdan oldin ishlaydi va agregat funksiyalar bilan ishlay olmaydi. Guruhlangan natijalarni (masalan, o'rtacha ballni) filtrlash uchun HAVING ishlatiladi:
+1. Jadvallarni o'zaro bog'lash (JOIN turlari)
+INNER JOIN bilan 3 ta jadvalni bog'lash
+Faqat baho olgan talabalarni, ularning qaysi fandan qanday baho olganini ko'rish uchun uchta jadvalni zanjir simon bog'laymiz:
 
 SQL
--- O'rtacha bali 80 dan yuqori bo'lgan yo'nalishlarni chiqarish
-SELECT 
-    yonalish, 
-    ROUND(AVG(joriy_ball), 2) AS ortacha_ball
-FROM talabalar
-GROUP BY yonalish
-HAVING AVG(joriy_ball) > 80;
-Ko'p ustunli guruhlash (Multi-column GROUP BY)
-Ma'lumotlarni bir vaqtning o'zida ham yo'nalish, ham yosh bo'yicha guruhlash:
+SELECT t.ism, t.familiya, f.fan_nomi, b.baho
+FROM talabalar t
+INNER JOIN baholar b ON t.id = b.talaba_id
+INNER JOIN fanlar f ON b.fan_id = f.id;
+LEFT JOIN bilan bahosizlarni saqlash
+Baho olgan yoki umuman bahosi yo'q (imtihonga kirmagan) barcha talabalarni ro'yxatda saqlab qolish uchun LEFT JOIN ishlatiladi:
 
 SQL
--- Bir xil yo'nalishda va bir xil yoshda bo'lgan talabalar sonini ko'rish
-SELECT 
-    yonalish, 
-    yosh, 
-    COUNT(*) AS talabalar_soni
-FROM talabalar
-GROUP BY yonalish, yosh
-ORDER BY yonalish, yosh;
-2. Murakkab Jamlash va Konstruksiyalar
-STRING_AGG bilan matnlarni birlashtirish
-Guruh ichidagi satrlarni bitta qatorga vergul (yoki boshqa belgi) bilan ajratib yozish uchun ishlatiladi:
+SELECT t.ism, t.familiya, b.baho
+FROM talabalar t
+LEFT JOIN baholar b ON t.id = b.talaba_id;
+Bahosi yo'q talabalarni topish (WHERE ... IS NULL)
+LEFT JOIN qilinganda, bahosi yo'q talabalarning baho ustunlariga NULL yoziladi. Faqat ularni ajratib olish so'rovi:
 
 SQL
--- Har bir yo'nalishda o'qiydigan talabalarning ismlarini bitta katakka jamlab ko'rsatish
-SELECT 
-    yonalish, 
-    STRING_AGG(ism, ', ') AS talabalar_royxati
-FROM talabalar
-GROUP BY yonalish;
-WHERE, GROUP BY va HAVING birgalikda
-Ushbu uchta operator bitta so'rovda kelganda qat'iy ketma-ketlikda yoziladi:
+SELECT t.ism, t.familiya
+FROM talabalar t
+LEFT JOIN baholar b ON t.id = b.talaba_id
+WHERE b.id IS NULL; -- Baholar jadvalidan hech qanday mos qator topilmaganlar
+2. Murakkab JOIN va Analitik So'rovlar
+Har talabaning o'rtacha bahosi (LEFT JOIN + GROUP BY)
+Baho olmagan talabalarni ham hisobotdan tushirib qoldirmaslik uchun LEFT JOIN va GROUP BY birga ishlatiladi:
 
 SQL
--- 1. Yoshi 20 dan katta talabalarni saralash (WHERE)
--- 2. Ularni yo'nalish bo'yicha guruhlash (GROUP BY)
--- 3. Guruh ichida talabalar soni 1 tadan ko'p bo'lganlarini qoldirish (HAVING)
-SELECT 
-    yonalish, 
-    COUNT(*) AS talabalar_soni,
-    ROUND(AVG(joriy_ball), 2) AS ortacha_ball
-FROM talabalar
-WHERE yosh > 20
-GROUP BY yonalish
-HAVING COUNT(*) > 1;
-3. Eng ko'p qilinadigan xato: GROUP BY guruhiga kirmagan oddiy ustunni SELECT ga yozish
-Xato kod (Ishlamaydi!):
+SELECT t.ism, t.familiya, ROUND(AVG(b.baho), 2) AS ortacha_baho
+FROM talabalar t
+LEFT JOIN baholar b ON t.id = b.talaba_id
+GROUP BY t.id, t.ism, t.familiya;
+Har fan bo'yicha eng yuqori ball olgan talaba
+Buning uchun subquery yoki PostgreSQL-ning DISTINCT ON operatoridan foydalanish eng qulay yechim hisoblanadi:
+
 SQL
--- XATO: 'ism' ustuni GROUP BY ichida yo'q va hech qanday agregat funksiyaga olingan emas
-SELECT yonalish, ism, AVG(joriy_ball) 
-FROM talabalar
-GROUP BY yonalish;
-PostgreSQL beradigan xatolik xabari: ERROR: column "talabalar.ism" must appear in the GROUP BY clause or be used in an aggregate function
+SELECT DISTINCT ON (f.id) f.fan_nomi, t.ism, t.familiya, b.baho
+FROM fanlar f
+INNER JOIN baholar b ON f.id = b.fan_id
+INNER JOIN talabalar t ON b.talaba_id = t.id
+ORDER BY f.id, b.baho DESC;
+Self JOIN misoli (Bitta jadvalni o'ziga bog'lash)
+Bitta jadvalda o'zaro bog'liqlikni tekshirish. Masalan, bir xil yo'nalishda o'qiydigan kursdoshlarni juftlik qilib chiqarish:
 
-Sababi nimada?
-Siz bazadan ma'lumotlarni yonalish bo'yicha guruhlashni so'rayapsiz. Masalan, "Dasturlash" yo'nalishida 4 ta talaba bor. AVG(joriy_ball) funksiyasi shu 4 ta talabaning balini qo'shib, bitta raqam (o'rtacha qiymat) qilib beradi.
+SQL
+SELECT t1.ism AS talaba_1, t2.ism AS talaba_2, t1.yonalish
+FROM talabalar t1
+INNER JOIN talabalar t2 ON t1.yonalish = t2.yonalish AND t1.id < t2.id; 
+-- t1.id < t2.id sharti bitta juftlik ikki marta takrorlanmasligi (A va B, keyin B va A) uchun qo'yiladi.
+3. Ataylab xato: Implicit Join va Dekart ko'paytmasi (Cartesian Product)
+SQL-ning eski standartlarida (SQL-92 gacha) JOIN so'zi o'rniga jadvallar shunchaki vergul bilan ajratib yozilgan. Bu Implicit Join deyiladi.
 
-Lekin siz bitta qatorga siqilgan "Dasturlash" guruhi yoniga ism ustunini ham chiqarmoqchisiz. SQL o'sha guruh ichidagi 4 ta har xil ismdan (Anvar, Diyora, Zilola, Kamola) aynan qaysi birini ko'rsatishni bilmaydi (chunki qatorlar soni mos kelmaydi).
+Xato / Xavfli kod:
+SQL
+-- Agarda WHERE sharti esdan chiqsa yoki noto'g'ri yozilsa:
+SELECT talabalar.ism, fanlar.fan_nomi
+FROM talabalar, fanlar; 
+Natija va Sababi (Cartesian / CROSS JOIN):
+Agarda siz ON yoki WHERE orqali bog'lanish shartini bermasangiz, SQL har ikkala jadvaldagi barcha qatorlarni bir-biriga ko'paytirib chiqadi (Dekart ko'paytmasi).
 
-To'g'ri yechish qoidasi:
-Agar so'rovda GROUP BY ishlatilsa, SELECT qismida faqat quyidagilar bo'lishi mumkin:
+Masalan, talabalar jadvalida 10 ta qator, fanlar jadvalida 5 ta qator bo'lsa, natijada hech qanday mantiqsiz 50 ta qator (10×5) hosil bo'ladi.
 
-GROUP BY guruhiga kiritilgan ustunlar (masalan: yonalish).
-
-Agregat funksiyaga olingan ustunlar (masalan: AVG(joriy_ball) yoki STRING_AGG(ism, ', ')).
+Agar katta bazalarda (millionlab qatorli jadvallarda) tasodifan mana shunday so'rov yozib yuborilsa, server xotirasi to'lib, baza butunlay qulashi (crash bo'lishi) mumkin. Shuning uchun har doim zamonaviy va xavfsiz INNER JOIN ... ON ... sintaksisidan foydalanish shart.
