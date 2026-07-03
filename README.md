@@ -1,113 +1,99 @@
 # SQL-va-PostgreSQL-Asoslari-2
-PostgreSQL-da ma'lumotlarni kiritish (INSERT), o'zgartirish (UPDATE), o'chirish (DELETE) va tranzaksiyalar (ACID tamoyillari) bilan ishlash bo'yicha so'ralgan barcha amaliy misollar quyida keltirilgan.
+Mana, siz so'ragan barcha shartlarni o'z ichiga olgan SQL ma'lumotlar bazasi sxemasi va misollari. Biz "Onlayn Kurslar va Obunalar" tizimini loyihalashtiramiz.
 
-1. Ma'lumot kiritish (INSERT — 5 xil usul)
-SQL
--- 1. Standart usul (Barcha ustunlarni ko'rsatib bitta qator kiritish)
-INSERT INTO talabalar (ism, familiya, yosh, yonalish, joriy_ball) 
-VALUES ('Eldor', 'Nomozov', 20, 'Kiberxavfsizlik', 75.00);
-
--- 2. Qisqartirilgan usul (Ustun nomlarisiz - jadvaldagi ketma-ketlik bo'yicha)
--- Diqqat: 'id' SERIAL bo'lgani uchun DEFAULT kalit so'zi ishlatiladi
-INSERT INTO talabalar VALUES (DEFAULT, 'Madina', 'Nasimova', 21, 'Dasturlash', 90.00);
-
--- 3. Vergul orqali bir vaqtda bir nechta qatorni kiritish (Bulk Insert)
-INSERT INTO talabalar (ism, familiya, yosh, yonalish, joriy_ball) VALUES 
-('Shaxzod', 'Xasanov', 22, 'Sun''iy intellekt', 68.50),
-('Lola', 'Karimova', 19, 'Ma''lumotlar tahlili', 84.20);
-
--- 4. RETURNING yordamida kiritilgan ma'lumot id-sini qaytarib olish
-INSERT INTO talabalar (ism, familiya, yonalish) 
-VALUES ('Rustam', 'Ganiyev', 'Dasturlash') 
-RETURNING id, ism;
-
--- 5. Boshqa jadvaldan ma'lumot nusxalash (INSERT INTO ... SELECT)
--- Faraz qilaylik, 'arxiv_talabalar' degan jadval mavjud
-INSERT INTO talabalar (ism, familiya, yonalish)
-SELECT ism, familiya, yonalish FROM arxiv_talabalar WHERE yosh = 20;
-2. Ma'lumotni yangilash (UPDATE — 3 xil usul)
-SQL
--- 1. Oddiy UPDATE (Konkret shart asosida qiymatni o'zgartirish)
-UPDATE talabalar 
-SET yonalish = 'Sun''iy intellekt' 
-WHERE id = 5;
-
--- 2. Expression (Ifoda) yordamida yangilash (Eski qiymat ustida amal bajarish)
--- Dasturlash yo'nalishidagi barcha talabalarning balini 5 ballga oshirish
-UPDATE talabalar 
-SET joriy_ball = joriy_ball + 5 
-WHERE yonalish = 'Dasturlash';
-
--- 3. Korelatsion (Bog'langan) UPDATE (Boshqa jadval ma'lumotiga tayanib yangilash)
--- Talabaning balini 'imtihonlar' jadvalidagi eng oxirgi ballga qarab yangilash
-UPDATE talabalar t
-SET joriy_ball = (SELECT max_baho FROM imtihonlar i WHERE i.talaba_id = t.id)
-WHERE EXISTS (SELECT 1 FROM imtihonlar i WHERE i.talaba_id = t.id);
-3. Ma'lumotni o'chirish (DELETE — 2 xil usul)
-SQL
--- 1. Shart bo'yicha o'chirish va o'chirilgan qatorlarni RETURNING bilan ko'rish
-DELETE FROM talabalar 
-WHERE joriy_ball < 50
-RETURNING id, ism, familiya, joriy_ball;
-
--- 2. Murakkab shart (Subquery) orqali o'chirish
--- Hech qaysi fandan baho olmagan (baholar jadvalida mavjud bo'lmagan) talabalarni o'chirish
-DELETE FROM talabalar 
-WHERE id NOT IN (SELECT DISTINCT talaba_id FROM baholar)
-RETURNING *;
-4. Tranzaksiyalar (TCL: COMMIT, ROLLBACK, SAVEPOINT)
-Tranzaksiyalar ma'lumotlar bazasining butunligini ta'minlaydi. Bir nechta amal birgalikda muvaffaqiyatli bajarilishi yoki xatolik bo'lsa barchasi bekor bo'lishi kerak.
-
-BEGIN ... COMMIT (O'zgarishlarni doimiy saqlash)
-SQL
-BEGIN; -- Tranzaksiyani boshlash
-
-UPDATE talabalar SET joriy_ball = joriy_ball + 2 WHERE yonalish = 'Kiberxavfsizlik';
-INSERT INTO talabalar (ism, familiya, yonalish) VALUES ('Jasur', 'Akramov', 'Kiberxavfsizlik');
-
-COMMIT; -- Agar xatolik bo'lmasa, barcha o'zgarishlar bazaga yoziladi
-BEGIN ... ROLLBACK (O'zgarishlarni butunlay bekor qilish)
-SQL
-BEGIN;
-
-DELETE FROM talabalar WHERE id = 1; -- Tasodifan noto'g'ri odam o'chirildi
-UPDATE talabalar SET joriy_ball = 0; -- Yana bir xato amal bajarildi
-
-ROLLBACK; -- Tranzaksiya ichidagi barcha amallar bekor qilinadi, jadval avvalgi holiga qaytadi
-SAVEPOINT bilan qisman bekor qilish
-SQL
-BEGIN;
-
-UPDATE talabalar SET joriy_ball = 99 WHERE id = 2;
-SAVEPOINT nuqta_1; -- Birinchi xavfsiz nuqtani yaratamiz
-
-DELETE FROM talabalar; -- Xatolik: hamma talabalar o'chirib yuborildi!
-
-ROLLBACK TO nuqta_1; -- Faqat o'chirish amali bekor bo'ladi, id=2 bo'lgan yangilanish saqlanib qoladi
-COMMIT; -- Tranzaksiyani yakunlaymiz
-5. ON CONFLICT DO UPDATE (Upsert)
-Agar kiritilayotgan ma'lumot bazada oldindan mavjud bo'lsa (birlamchi kalit yoki UNIQUE ustun bo'yicha to'qnashuv bo'lsa), xatolik bermasdan mavjud qatorni yangilash amali:
+1. Jadval sxemalarini yaratish (CREATE TABLE)
+Foydalanuvchilar jadvali (users)
+Bu yerda UNIQUE, NOT NULL va DEFAULT cheklovlari ishlatilgan.
 
 SQL
--- Faraz qilaylik 'id' ustuni to'qnashsa, yangi ma'lumot qo'shilmaydi, faqat ball yangilanadi
-INSERT INTO talabalar (id, ism, familiya, joriy_ball) 
-VALUES (3, 'Jasur', 'Tursunov', 85.00)
-ON CONFLICT (id) 
-DO UPDATE SET joriy_ball = EXCLUDED.joriy_ball; 
--- EXCLUDED kalit so'zi VALUES ichida kelgan yangi qiymatni anglatadi
-6. WHERE operatorisiz UPDATE va DELETE — Katta Xavf!
-SQL-da UPDATE va DELETE buyruqlariga WHERE shartini yozish majburiy emas. Ammo bu juda katta xavfni keltirib chiqaradi.
-
-Xavf nimada?
-Agar siz tasodifan shart berishni unutsangiz:
+CREATE TABLE users (
+    user_id SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'inactive'))
+);
+Kurslar jadvali (courses)
+Bu yerda pul uchun NUMERIC(p, s) va kurs narxini tekshirish uchun CHECK ishlatilgan.
 
 SQL
--- DAHSATLI XATO: Bazadagi BARCHA talabalarning ismi 'Xaker' bo'lib qoladi!
-UPDATE talabalar SET ism = 'Xaker';
+CREATE TABLE courses (
+    course_id SERIAL PRIMARY KEY,
+    title VARCHAR(150) NOT NULL,
+    price NUMERIC(10, 2) NOT NULL CHECK (price >= 0),
+    is_published BOOLEAN DEFAULT FALSE
+);
+Obunalar jadvali (subscriptions)
+Bu yerda FOREIGN KEY bog'lanishlari, ON DELETE CASCADE / RESTRICT va Multi-column UNIQUE (bitta foydalanuvchi bitta kursga faqat bir marta obuna bo'lishi uchun) qo'llanilgan.
 
--- DAHSATLI XATO: Jadvaldagi BARCHA ma'lumotlar butunlay o'chib ketadi!
-DELETE FROM talabalar;
-Natija: Baza hech qanday ogohlantirishsiz jadvaldagi barcha qatorlarni yangilaydi yoki o'chiradi. Katta proyektlarda bu kompaniya uchun millionlab dollar zarar keltirishi yoki biznes faoliyatini to'xtatib qo'yishi mumkin.
+SQL
+CREATE TABLE subscriptions (
+    subscription_id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    course_id INT NOT NULL,
+    start_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    end_date TIMESTAMPTZ NOT NULL,
+    
+    -- Foreign Key va ON DELETE misollari
+    CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    CONSTRAINT fk_course FOREIGN KEY (course_id) REFERENCES courses(course_id) ON DELETE RESTRICT,
+    
+    -- Multi-column UNIQUE (Foydalanuvchi + Kurs kombinatsiyasi takrorlanmasligi kerak)
+    CONSTRAINT unique_user_course UNIQUE (user_id, course_id)
+);
+2. ALTER TABLE yordamida ustun qo'shish va o'zgartirish
+Jadval yaratilgandan keyin unga o'zgartirish kiritish:
 
-Himoyalanish: 1. Har doim bunday so'rovlarni avval BEGIN; tranzaksiyasi ichida yozib, natijani tekshirib, keyin COMMIT; qilish lozim.
-2. pgAdmin yoki ishlab chiqarish (Production) muhitlarida "Safe Updates" rejimini yoqib qo'yish kerak, bu rejim WHEREsiz so'rovlarni bloklaydi.
+SQL
+-- 1. Kurslar jadvaliga yangi ustun qo'shish
+ALTER TABLE courses ADD COLUMN duration_hours INT DEFAULT 0;
+
+-- 2. Foydalanuvchilar jadvalidagi 'username' ustunining ma'lumot turini o'zgartirish
+ALTER TABLE users ALTER COLUMN username TYPE VARCHAR(100);
+3. Sxemada xato ma'lumot kiritishga urinish (Testlar)
+Keling, yuqoridagi cheklovlar (Constraints) qanday ishlashini tekshirib ko'ramiz.
+
+Xato 1: CHECK cheklovining buzilishi (Manfiy narx)
+Kurs narxi 0 dan katta yoki teng bo'lishi kerak edi.
+
+SQL
+INSERT INTO courses (title, price) VALUES ('Sun''iy Intellekt', -50.00);
+❌ Xatolik xabari: ERROR: new row for relation "courses" violates check constraint "courses_price_check"
+
+Xato 2: UNIQUE cheklovining buzilishi (Bir xil email)
+Bir xil emailli foydalanuvchi ro'yxatdan o'ta olmaydi.
+
+SQL
+INSERT INTO users (username, email) VALUES ('ali', 'ali@example.com');
+-- Ikkinchi marta xuddi shu email bilan urinamiz:
+INSERT INTO users (username, email) VALUES ('valijon', 'ali@example.com');
+❌ Xatolik xabari: ERROR: duplicate key value violates unique constraint "users_email_key"
+
+Xato 3: Multi-column UNIQUE buzilishi
+Foydalanuvchi bitta kursga ikki marta obuna bo'la olmaydi.
+
+SQL
+-- Birinchi marta muvaffaqiyatli yoziladi:
+INSERT INTO subscriptions (user_id, course_id, end_date) VALUES (1, 1, '2026-12-31 23:59:59+05');
+
+-- Xuddi shu foydalanuvchi yana shu kursga yozilmoqchi bo'lsa:
+INSERT INTO subscriptions (user_id, course_id, end_date) VALUES (1, 1, '2026-12-31 23:59:59+05');
+❌ Xatolik xabari: ERROR: duplicate key value violates unique constraint "unique_user_course"
+
+4. ON DELETE CASCADE va RESTRICT amalda
+Aytaylik, tizimda ma'lumotlar bor. Endi o'chirishni sinab ko'ramiz:
+
+ON DELETE RESTRICT (Taqiqlash)
+Agar kursga kimdir obuna bo'lgan bo'lsa, u kursni o'chirib tashlay olmaymiz.
+
+SQL
+DELETE FROM courses WHERE course_id = 1;
+❌ Xatolik xabari: ERROR: update or delete on table "courses" violates foreign key constraint "fk_course" on table "subscriptions"
+(Izoh: Tizim kursni o'chirishga yo'l qo'ymaydi, chunki obunalar jadvali unga bog'lanib turibdi).
+
+ON DELETE CASCADE (Zanjirli o'chirish)
+Agar foydalanuvchi o'chirib yuborilsa, unga tegishli barcha obunalar avtomatik ravishda o'chib ketadi.
+
+SQL
+DELETE FROM users WHERE user_id = 1;
+Natija: So'rov muvaffaqiyatli bajariladi (Query returned successfully). users jadvalidan ushbu foydalanuvchi o'chadi va subscriptions jadvalidagi unga tegishli qatorlar ham avtomatik tozalanadi.
