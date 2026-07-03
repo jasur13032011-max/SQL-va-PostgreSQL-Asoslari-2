@@ -1,67 +1,89 @@
 # SQL-va-PostgreSQL-Asoslari-2
-PostgreSQL-da jadvallarni o'zaro bog'lash (JOIN) relyatsion ma'lumotlar bazalari bilan ishlashning eng muhim qismidir. Misollarni ko'rishdan oldin, bazamizda 3 ta jadval bor deb tasavvur qilamiz: talabalar, fanlar va ularni bog'laydigan baholar jadvali.
+PostgreSQL-da murakkab statistik hisobotlar, guruhlash va jadvallarni bog'lash (JOIN) yordamida "Dashboard" (tahliliy panel) uchun ma'lumotlar tayyorlash so'rovlari quyida keltirilgan.
 
-1. Jadvallarni o'zaro bog'lash (JOIN turlari)
-INNER JOIN bilan 3 ta jadvalni bog'lash
-Faqat baho olgan talabalarni, ularning qaysi fandan qanday baho olganini ko'rish uchun uchta jadvalni zanjir simon bog'laymiz:
+Har bir so'rov tepasida uning vazifasi -- izoh ko'rinishida yozilgan.
 
 SQL
-SELECT t.ism, t.familiya, f.fan_nomi, b.baho
-FROM talabalar t
-INNER JOIN baholar b ON t.id = b.talaba_id
-INNER JOIN fanlar f ON b.fan_id = f.id;
-LEFT JOIN bilan bahosizlarni saqlash
-Baho olgan yoki umuman bahosi yo'q (imtihonga kirmagan) barcha talabalarni ro'yxatda saqlab qolish uchun LEFT JOIN ishlatiladi:
+-- 1. Sinf (Yo'nalish) reytingi: Har bir yo'nalish bo'yicha jami talabalar soni, o'rtacha, maksimal va minimal ballar
+SELECT 
+    yonalish,
+    COUNT(*) AS talabalar_soni,
+    ROUND(AVG(joriy_ball), 2) AS ortacha_ball,
+    MAX(joriy_ball) AS eng_yuqori_ball,
+    MIN(joriy_ball) AS eng_past_ball
+FROM talabalar
+GROUP BY yonalish
+ORDER BY ortacha_ball DESC;
 
-SQL
-SELECT t.ism, t.familiya, b.baho
-FROM talabalar t
-LEFT JOIN baholar b ON t.id = b.talaba_id;
-Bahosi yo'q talabalarni topish (WHERE ... IS NULL)
-LEFT JOIN qilinganda, bahosi yo'q talabalarning baho ustunlariga NULL yoziladi. Faqat ularni ajratib olish so'rovi:
 
-SQL
-SELECT t.ism, t.familiya
-FROM talabalar t
-LEFT JOIN baholar b ON t.id = b.talaba_id
-WHERE b.id IS NULL; -- Baholar jadvalidan hech qanday mos qator topilmaganlar
-2. Murakkab JOIN va Analitik So'rovlar
-Har talabaning o'rtacha bahosi (LEFT JOIN + GROUP BY)
-Baho olmagan talabalarni ham hisobotdan tushirib qoldirmaslik uchun LEFT JOIN va GROUP BY birga ishlatiladi:
+-- 2. Fan bo'yicha statistika (HAVING bilan): Faqat kamida 3 ta talaba baho olgan va o'rtacha bahosi 4 dan yuqori bo'lgan fanlarni chiqarish
+SELECT 
+    f.fan_nomi,
+    COUNT(b.id) AS baholangan_talabalar,
+    ROUND(AVG(b.baho), 2) AS ortacha_baho
+FROM fanlar f
+INNER JOIN baholar b ON f.id = b.fan_id
+GROUP BY f.id, f.fan_nomi
+HAVING COUNT(b.id) >= 3 AND AVG(b.baho) > 4;
 
-SQL
-SELECT t.ism, t.familiya, ROUND(AVG(b.baho), 2) AS ortacha_baho
-FROM talabalar t
-LEFT JOIN baholar b ON t.id = b.talaba_id
-GROUP BY t.id, t.ism, t.familiya;
-Har fan bo'yicha eng yuqori ball olgan talaba
-Buning uchun subquery yoki PostgreSQL-ning DISTINCT ON operatoridan foydalanish eng qulay yechim hisoblanadi:
 
-SQL
-SELECT DISTINCT ON (f.id) f.fan_nomi, t.ism, t.familiya, b.baho
+-- 3. Har fan bo'yicha eng yaxshi talaba: Har bir fandan eng yuqori baho olgan talabani aniqlash (DISTINCT ON bilan optimallashtirilgan)
+SELECT DISTINCT ON (f.id) 
+    f.fan_nomi,
+    t.ism,
+    t.familiya,
+    b.baho AS eng_yuqori_baho
 FROM fanlar f
 INNER JOIN baholar b ON f.id = b.fan_id
 INNER JOIN talabalar t ON b.talaba_id = t.id
 ORDER BY f.id, b.baho DESC;
-Self JOIN misoli (Bitta jadvalni o'ziga bog'lash)
-Bitta jadvalda o'zaro bog'liqlikni tekshirish. Masalan, bir xil yo'nalishda o'qiydigan kursdoshlarni juftlik qilib chiqarish:
 
-SQL
-SELECT t1.ism AS talaba_1, t2.ism AS talaba_2, t1.yonalish
-FROM talabalar t1
-INNER JOIN talabalar t2 ON t1.yonalish = t2.yonalish AND t1.id < t2.id; 
--- t1.id < t2.id sharti bitta juftlik ikki marta takrorlanmasligi (A va B, keyin B va A) uchun qo'yiladi.
-3. Ataylab xato: Implicit Join va Dekart ko'paytmasi (Cartesian Product)
-SQL-ning eski standartlarida (SQL-92 gacha) JOIN so'zi o'rniga jadvallar shunchaki vergul bilan ajratib yozilgan. Bu Implicit Join deyiladi.
 
-Xato / Xavfli kod:
-SQL
--- Agarda WHERE sharti esdan chiqsa yoki noto'g'ri yozilsa:
-SELECT talabalar.ism, fanlar.fan_nomi
-FROM talabalar, fanlar; 
-Natija va Sababi (Cartesian / CROSS JOIN):
-Agarda siz ON yoki WHERE orqali bog'lanish shartini bermasangiz, SQL har ikkala jadvaldagi barcha qatorlarni bir-biriga ko'paytirib chiqadi (Dekart ko'paytmasi).
+-- 4. Bahosiz talabalar (LEFT JOIN + IS NULL): Biron marta ham baho olmagan (yoki imtihonga kirmagan) talabalar ro'yxati
+SELECT 
+    t.id, 
+    t.ism, 
+    t.familiya,
+    t.yonalish
+FROM talabalar t
+LEFT JOIN baholar b ON t.id = b.talaba_id
+WHERE b.id IS NULL;
 
-Masalan, talabalar jadvalida 10 ta qator, fanlar jadvalida 5 ta qator bo'lsa, natijada hech qanday mantiqsiz 50 ta qator (10×5) hosil bo'ladi.
 
-Agar katta bazalarda (millionlab qatorli jadvallarda) tasodifan mana shunday so'rov yozib yuborilsa, server xotirasi to'lib, baza butunlay qulashi (crash bo'lishi) mumkin. Shuning uchun har doim zamonaviy va xavfsiz INNER JOIN ... ON ... sintaksisidan foydalanish shart.
+-- 5. Universal a'lochi: Barcha topshirgan fanlaridan olgan eng past bahosi ham 85 dan yuqori bo'lgan (ya'ni umuman past baho olmagan) talabalar
+SELECT 
+    t.ism,
+    t.familiya,
+    MIN(b.baho) AS eng_past_bahosi,
+    ROUND(AVG(b.baho), 2) AS ortacha_bahosi
+FROM talabalar t
+INNER JOIN baholar b ON t.id = b.talaba_id
+GROUP BY t.id, t.ism, t.familiya
+HAVING MIN(b.baho) >= 85;
+
+
+-- 6. Hamma talabalar uchun ortacha (LEFT JOIN): Bahosi bor yoki yo'qligidan qat'iy nazar barcha talabalar va ularning o'rtacha bahosi (bahosizlarga 0 yoki NULL chiqadi)
+SELECT 
+    t.ism,
+    t.familiya,
+    COALESCE(ROUND(AVG(b.baho), 2), 0) AS ortacha_baho
+FROM talabalar t
+LEFT JOIN baholar b ON t.id = b.talaba_id
+GROUP BY t.id, t.ism, t.familiya
+ORDER BY ortacha_baho DESC;
+
+
+-- 7. Bonus — UNION ALL bilan dashboard metrikalari: Administratorlar paneli (Dashboard) uchun asosiy raqamli ko'rsatkichlarni bitta jadvalga yig'ish
+SELECT 'Jami talabalar soni' AS metrika, COUNT(*)::NUMERIC AS qiymat FROM talabalar
+UNION ALL
+SELECT 'Mavjud fanlar soni', COUNT(*)::NUMERIC FROM fanlar
+UNION ALL
+SELECT 'Umumiy o''rtacha ball (Universitet bo''yicha)', ROUND(AVG(joriy_ball), 2) FROM talabalar
+UNION ALL
+SELECT 'Eng yuqori talaba bali', MAX(joriy_ball) FROM talabalar;
+Tahlil va Maslahat:
+COALESCE(..., 0) funksiyasi 6-so'rovda bahosi bo'lmagan talabalarning o'rtacha bali NULL bo'lib qolmasdan, chiroyli ko'rinishda 0 bo'lib chiqishini ta'minlaydi.
+
+DISTINCT ON (f.id) operatori PostgreSQL-ning eng kuchli imkoniyatlaridan biri bo'lib, har bir guruhning (fanning) faqat birinchi qatorini (biz ORDER BY b.baho DESC qilganimiz uchun eng yuqori baholi qatorni) ajratib beradi.
+
+UNION ALL yordamida yaratilgan 7-so'rov (Dashboard) turli xil jadvallardan yig'ilgan yakuniy hisobotlarni backend dasturchilar yoki biznes tahlilchilar uchun bitta umumiy jadval ko'rinishida taqdim etadi.
