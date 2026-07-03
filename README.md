@@ -1,89 +1,113 @@
 # SQL-va-PostgreSQL-Asoslari-2
-PostgreSQL-da murakkab statistik hisobotlar, guruhlash va jadvallarni bog'lash (JOIN) yordamida "Dashboard" (tahliliy panel) uchun ma'lumotlar tayyorlash so'rovlari quyida keltirilgan.
+PostgreSQL-da ma'lumotlarni kiritish (INSERT), o'zgartirish (UPDATE), o'chirish (DELETE) va tranzaksiyalar (ACID tamoyillari) bilan ishlash bo'yicha so'ralgan barcha amaliy misollar quyida keltirilgan.
 
-Har bir so'rov tepasida uning vazifasi -- izoh ko'rinishida yozilgan.
+1. Ma'lumot kiritish (INSERT — 5 xil usul)
+SQL
+-- 1. Standart usul (Barcha ustunlarni ko'rsatib bitta qator kiritish)
+INSERT INTO talabalar (ism, familiya, yosh, yonalish, joriy_ball) 
+VALUES ('Eldor', 'Nomozov', 20, 'Kiberxavfsizlik', 75.00);
+
+-- 2. Qisqartirilgan usul (Ustun nomlarisiz - jadvaldagi ketma-ketlik bo'yicha)
+-- Diqqat: 'id' SERIAL bo'lgani uchun DEFAULT kalit so'zi ishlatiladi
+INSERT INTO talabalar VALUES (DEFAULT, 'Madina', 'Nasimova', 21, 'Dasturlash', 90.00);
+
+-- 3. Vergul orqali bir vaqtda bir nechta qatorni kiritish (Bulk Insert)
+INSERT INTO talabalar (ism, familiya, yosh, yonalish, joriy_ball) VALUES 
+('Shaxzod', 'Xasanov', 22, 'Sun''iy intellekt', 68.50),
+('Lola', 'Karimova', 19, 'Ma''lumotlar tahlili', 84.20);
+
+-- 4. RETURNING yordamida kiritilgan ma'lumot id-sini qaytarib olish
+INSERT INTO talabalar (ism, familiya, yonalish) 
+VALUES ('Rustam', 'Ganiyev', 'Dasturlash') 
+RETURNING id, ism;
+
+-- 5. Boshqa jadvaldan ma'lumot nusxalash (INSERT INTO ... SELECT)
+-- Faraz qilaylik, 'arxiv_talabalar' degan jadval mavjud
+INSERT INTO talabalar (ism, familiya, yonalish)
+SELECT ism, familiya, yonalish FROM arxiv_talabalar WHERE yosh = 20;
+2. Ma'lumotni yangilash (UPDATE — 3 xil usul)
+SQL
+-- 1. Oddiy UPDATE (Konkret shart asosida qiymatni o'zgartirish)
+UPDATE talabalar 
+SET yonalish = 'Sun''iy intellekt' 
+WHERE id = 5;
+
+-- 2. Expression (Ifoda) yordamida yangilash (Eski qiymat ustida amal bajarish)
+-- Dasturlash yo'nalishidagi barcha talabalarning balini 5 ballga oshirish
+UPDATE talabalar 
+SET joriy_ball = joriy_ball + 5 
+WHERE yonalish = 'Dasturlash';
+
+-- 3. Korelatsion (Bog'langan) UPDATE (Boshqa jadval ma'lumotiga tayanib yangilash)
+-- Talabaning balini 'imtihonlar' jadvalidagi eng oxirgi ballga qarab yangilash
+UPDATE talabalar t
+SET joriy_ball = (SELECT max_baho FROM imtihonlar i WHERE i.talaba_id = t.id)
+WHERE EXISTS (SELECT 1 FROM imtihonlar i WHERE i.talaba_id = t.id);
+3. Ma'lumotni o'chirish (DELETE — 2 xil usul)
+SQL
+-- 1. Shart bo'yicha o'chirish va o'chirilgan qatorlarni RETURNING bilan ko'rish
+DELETE FROM talabalar 
+WHERE joriy_ball < 50
+RETURNING id, ism, familiya, joriy_ball;
+
+-- 2. Murakkab shart (Subquery) orqali o'chirish
+-- Hech qaysi fandan baho olmagan (baholar jadvalida mavjud bo'lmagan) talabalarni o'chirish
+DELETE FROM talabalar 
+WHERE id NOT IN (SELECT DISTINCT talaba_id FROM baholar)
+RETURNING *;
+4. Tranzaksiyalar (TCL: COMMIT, ROLLBACK, SAVEPOINT)
+Tranzaksiyalar ma'lumotlar bazasining butunligini ta'minlaydi. Bir nechta amal birgalikda muvaffaqiyatli bajarilishi yoki xatolik bo'lsa barchasi bekor bo'lishi kerak.
+
+BEGIN ... COMMIT (O'zgarishlarni doimiy saqlash)
+SQL
+BEGIN; -- Tranzaksiyani boshlash
+
+UPDATE talabalar SET joriy_ball = joriy_ball + 2 WHERE yonalish = 'Kiberxavfsizlik';
+INSERT INTO talabalar (ism, familiya, yonalish) VALUES ('Jasur', 'Akramov', 'Kiberxavfsizlik');
+
+COMMIT; -- Agar xatolik bo'lmasa, barcha o'zgarishlar bazaga yoziladi
+BEGIN ... ROLLBACK (O'zgarishlarni butunlay bekor qilish)
+SQL
+BEGIN;
+
+DELETE FROM talabalar WHERE id = 1; -- Tasodifan noto'g'ri odam o'chirildi
+UPDATE talabalar SET joriy_ball = 0; -- Yana bir xato amal bajarildi
+
+ROLLBACK; -- Tranzaksiya ichidagi barcha amallar bekor qilinadi, jadval avvalgi holiga qaytadi
+SAVEPOINT bilan qisman bekor qilish
+SQL
+BEGIN;
+
+UPDATE talabalar SET joriy_ball = 99 WHERE id = 2;
+SAVEPOINT nuqta_1; -- Birinchi xavfsiz nuqtani yaratamiz
+
+DELETE FROM talabalar; -- Xatolik: hamma talabalar o'chirib yuborildi!
+
+ROLLBACK TO nuqta_1; -- Faqat o'chirish amali bekor bo'ladi, id=2 bo'lgan yangilanish saqlanib qoladi
+COMMIT; -- Tranzaksiyani yakunlaymiz
+5. ON CONFLICT DO UPDATE (Upsert)
+Agar kiritilayotgan ma'lumot bazada oldindan mavjud bo'lsa (birlamchi kalit yoki UNIQUE ustun bo'yicha to'qnashuv bo'lsa), xatolik bermasdan mavjud qatorni yangilash amali:
 
 SQL
--- 1. Sinf (Yo'nalish) reytingi: Har bir yo'nalish bo'yicha jami talabalar soni, o'rtacha, maksimal va minimal ballar
-SELECT 
-    yonalish,
-    COUNT(*) AS talabalar_soni,
-    ROUND(AVG(joriy_ball), 2) AS ortacha_ball,
-    MAX(joriy_ball) AS eng_yuqori_ball,
-    MIN(joriy_ball) AS eng_past_ball
-FROM talabalar
-GROUP BY yonalish
-ORDER BY ortacha_ball DESC;
+-- Faraz qilaylik 'id' ustuni to'qnashsa, yangi ma'lumot qo'shilmaydi, faqat ball yangilanadi
+INSERT INTO talabalar (id, ism, familiya, joriy_ball) 
+VALUES (3, 'Jasur', 'Tursunov', 85.00)
+ON CONFLICT (id) 
+DO UPDATE SET joriy_ball = EXCLUDED.joriy_ball; 
+-- EXCLUDED kalit so'zi VALUES ichida kelgan yangi qiymatni anglatadi
+6. WHERE operatorisiz UPDATE va DELETE — Katta Xavf!
+SQL-da UPDATE va DELETE buyruqlariga WHERE shartini yozish majburiy emas. Ammo bu juda katta xavfni keltirib chiqaradi.
 
+Xavf nimada?
+Agar siz tasodifan shart berishni unutsangiz:
 
--- 2. Fan bo'yicha statistika (HAVING bilan): Faqat kamida 3 ta talaba baho olgan va o'rtacha bahosi 4 dan yuqori bo'lgan fanlarni chiqarish
-SELECT 
-    f.fan_nomi,
-    COUNT(b.id) AS baholangan_talabalar,
-    ROUND(AVG(b.baho), 2) AS ortacha_baho
-FROM fanlar f
-INNER JOIN baholar b ON f.id = b.fan_id
-GROUP BY f.id, f.fan_nomi
-HAVING COUNT(b.id) >= 3 AND AVG(b.baho) > 4;
+SQL
+-- DAHSATLI XATO: Bazadagi BARCHA talabalarning ismi 'Xaker' bo'lib qoladi!
+UPDATE talabalar SET ism = 'Xaker';
 
+-- DAHSATLI XATO: Jadvaldagi BARCHA ma'lumotlar butunlay o'chib ketadi!
+DELETE FROM talabalar;
+Natija: Baza hech qanday ogohlantirishsiz jadvaldagi barcha qatorlarni yangilaydi yoki o'chiradi. Katta proyektlarda bu kompaniya uchun millionlab dollar zarar keltirishi yoki biznes faoliyatini to'xtatib qo'yishi mumkin.
 
--- 3. Har fan bo'yicha eng yaxshi talaba: Har bir fandan eng yuqori baho olgan talabani aniqlash (DISTINCT ON bilan optimallashtirilgan)
-SELECT DISTINCT ON (f.id) 
-    f.fan_nomi,
-    t.ism,
-    t.familiya,
-    b.baho AS eng_yuqori_baho
-FROM fanlar f
-INNER JOIN baholar b ON f.id = b.fan_id
-INNER JOIN talabalar t ON b.talaba_id = t.id
-ORDER BY f.id, b.baho DESC;
-
-
--- 4. Bahosiz talabalar (LEFT JOIN + IS NULL): Biron marta ham baho olmagan (yoki imtihonga kirmagan) talabalar ro'yxati
-SELECT 
-    t.id, 
-    t.ism, 
-    t.familiya,
-    t.yonalish
-FROM talabalar t
-LEFT JOIN baholar b ON t.id = b.talaba_id
-WHERE b.id IS NULL;
-
-
--- 5. Universal a'lochi: Barcha topshirgan fanlaridan olgan eng past bahosi ham 85 dan yuqori bo'lgan (ya'ni umuman past baho olmagan) talabalar
-SELECT 
-    t.ism,
-    t.familiya,
-    MIN(b.baho) AS eng_past_bahosi,
-    ROUND(AVG(b.baho), 2) AS ortacha_bahosi
-FROM talabalar t
-INNER JOIN baholar b ON t.id = b.talaba_id
-GROUP BY t.id, t.ism, t.familiya
-HAVING MIN(b.baho) >= 85;
-
-
--- 6. Hamma talabalar uchun ortacha (LEFT JOIN): Bahosi bor yoki yo'qligidan qat'iy nazar barcha talabalar va ularning o'rtacha bahosi (bahosizlarga 0 yoki NULL chiqadi)
-SELECT 
-    t.ism,
-    t.familiya,
-    COALESCE(ROUND(AVG(b.baho), 2), 0) AS ortacha_baho
-FROM talabalar t
-LEFT JOIN baholar b ON t.id = b.talaba_id
-GROUP BY t.id, t.ism, t.familiya
-ORDER BY ortacha_baho DESC;
-
-
--- 7. Bonus — UNION ALL bilan dashboard metrikalari: Administratorlar paneli (Dashboard) uchun asosiy raqamli ko'rsatkichlarni bitta jadvalga yig'ish
-SELECT 'Jami talabalar soni' AS metrika, COUNT(*)::NUMERIC AS qiymat FROM talabalar
-UNION ALL
-SELECT 'Mavjud fanlar soni', COUNT(*)::NUMERIC FROM fanlar
-UNION ALL
-SELECT 'Umumiy o''rtacha ball (Universitet bo''yicha)', ROUND(AVG(joriy_ball), 2) FROM talabalar
-UNION ALL
-SELECT 'Eng yuqori talaba bali', MAX(joriy_ball) FROM talabalar;
-Tahlil va Maslahat:
-COALESCE(..., 0) funksiyasi 6-so'rovda bahosi bo'lmagan talabalarning o'rtacha bali NULL bo'lib qolmasdan, chiroyli ko'rinishda 0 bo'lib chiqishini ta'minlaydi.
-
-DISTINCT ON (f.id) operatori PostgreSQL-ning eng kuchli imkoniyatlaridan biri bo'lib, har bir guruhning (fanning) faqat birinchi qatorini (biz ORDER BY b.baho DESC qilganimiz uchun eng yuqori baholi qatorni) ajratib beradi.
-
-UNION ALL yordamida yaratilgan 7-so'rov (Dashboard) turli xil jadvallardan yig'ilgan yakuniy hisobotlarni backend dasturchilar yoki biznes tahlilchilar uchun bitta umumiy jadval ko'rinishida taqdim etadi.
+Himoyalanish: 1. Har doim bunday so'rovlarni avval BEGIN; tranzaksiyasi ichida yozib, natijani tekshirib, keyin COMMIT; qilish lozim.
+2. pgAdmin yoki ishlab chiqarish (Production) muhitlarida "Safe Updates" rejimini yoqib qo'yish kerak, bu rejim WHEREsiz so'rovlarni bloklaydi.
