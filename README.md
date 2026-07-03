@@ -1,81 +1,83 @@
 # SQL-va-PostgreSQL-Asoslari-2
-1. Agregat va Statistik Funksiyalar
-COUNT(*) va COUNT(DISTINCT) farqi
-COUNT(*) — jadvaldagi umumiy qatorlar sonini (shu jumladan NULL va takrorlanadigan qatorlarni) hisoblaydi.
+PostgreSQL-da ma'lumotlarni guruhlash (GROUP BY), guruhlangan natijalarni filtrlash (HAVING) va qatorlarni jamlash uchun quyidagi so'rovlar hamda qoidalardan foydalanishingiz mumkin.
 
-COUNT(DISTINCT ustun) — faqat unikal (takrorlanmaydigan) va NULL bo'lmagan qiymatlar sonini hisoblaydi.
-
-SQL
--- Talabalarning umumiy soni va yo'nalishlarning takrorsiz soni
-SELECT 
-    COUNT(*) AS jami_talabalar,
-    COUNT(DISTINCT yonalish) AS unikal_yonalishlar
-FROM talabalar;
-To'liq statistika va ROUND bilan yumaloqlash
-SUM, AVG, MIN, MAX funksiyalari orqali umumiy statistikani chiqarish va ROUND funksiyasi yordamida kasr qismni (masalan, verguldan keyin 2 ta raqamgacha) yumaloqlash:
+1. Guruhlash va Guruhlarni Filtrlash
+Yo'nalish bo'yicha guruhlash (GROUP BY + COUNT + AVG)
+Har bir yo'nalishda nechta talaba o'qishi va ularning o'rtacha ballini hisoblash:
 
 SQL
 SELECT 
-    SUM(joriy_ball) AS umumiy_ball,
-    ROUND(AVG(joriy_ball), 2) AS ortacha_ball,
-    MIN(joriy_ball) AS eng_past_ball,
-    MAX(joriy_ball) AS eng_yuqori_ball
-FROM talabalar;
-2. Matn (String) va Matematik Funksiyalar
-Matn funksiyalari (UPPER, LENGTH, ||)
-SQL
--- Ism-familiyani katta harflarda birlashtirish va yo'nalish matni uzunligini o'lchash
-SELECT 
-    UPPER(ism || ' ' || familiya) AS toliq_ism_katta,
-    yonalish,
-    LENGTH(yonalish) AS yonalish_harflar_soni
-FROM talabalar;
-Matematik funksiyalar (CEIL, FLOOR, MOD)
-CEIL(x) — eng yaqin katta butun songa qarab yaxlitlaydi.
-
-FLOOR(x) — eng yaqin kichik butun songa qarab yaxlitlaydi.
-
-MOD(x, y) — bo'lishdan chiqqan qoldiqni hisoblaydi.
+    yonalish, 
+    COUNT(*) AS talabalar_soni, 
+    ROUND(AVG(joriy_ball), 2) AS ortacha_ball
+FROM talabalar
+GROUP BY yonalish;
+Guruhlarni filtrlash (HAVING)
+WHERE operatori guruhlashdan oldin ishlaydi va agregat funksiyalar bilan ishlay olmaydi. Guruhlangan natijalarni (masalan, o'rtacha ballni) filtrlash uchun HAVING ishlatiladi:
 
 SQL
--- Ballarni yuqoriga/pastga yaxlitlash va yoshni 2 ga bo'lgandagi qoldiq (toq/juftlik)
+-- O'rtacha bali 80 dan yuqori bo'lgan yo'nalishlarni chiqarish
 SELECT 
-    joriy_ball,
-    CEIL(joriy_ball) AS yuqoriga_yaxlit,
-    FLOOR(joriy_ball) AS pastga_yaxlit,
-    yosh,
-    MOD(yosh, 2) AS yosh_qoldig_i
-FROM talabalar;
-3. Sana va Vaqt Funksiyalari (NOW, CURRENT_DATE, EXTRACT)
-PostgreSQL-da joriy vaqtni aniqlash va sananing ma'lum qismlarini ajratib olish:
+    yonalish, 
+    ROUND(AVG(joriy_ball), 2) AS ortacha_ball
+FROM talabalar
+GROUP BY yonalish
+HAVING AVG(joriy_ball) > 80;
+Ko'p ustunli guruhlash (Multi-column GROUP BY)
+Ma'lumotlarni bir vaqtning o'zida ham yo'nalish, ham yosh bo'yicha guruhlash:
 
 SQL
+-- Bir xil yo'nalishda va bir xil yoshda bo'lgan talabalar sonini ko'rish
 SELECT 
-    NOW() AS joriy_vaqt_va_sana,          -- To'liq vaqt (miqyosi bilan)
-    CURRENT_DATE AS bugungi_sana,         -- Faqat sana (yil-oy-kun)
-    EXTRACT(YEAR FROM NOW()) AS joriy_yil, -- Faqat yilni ajratib olish
-    EXTRACT(MONTH FROM NOW()) AS joriy_oy  -- Faqat oyni ajratib olish
-FROM talabalar 
-LIMIT 1; -- Faqat 1 marta chiqishi uchun
-4. Eng ko'p qilinadigan xato: WHERE ichida Agregat funksiya ishlatish
+    yonalish, 
+    yosh, 
+    COUNT(*) AS talabalar_soni
+FROM talabalar
+GROUP BY yonalish, yosh
+ORDER BY yonalish, yosh;
+2. Murakkab Jamlash va Konstruksiyalar
+STRING_AGG bilan matnlarni birlashtirish
+Guruh ichidagi satrlarni bitta qatorga vergul (yoki boshqa belgi) bilan ajratib yozish uchun ishlatiladi:
+
+SQL
+-- Har bir yo'nalishda o'qiydigan talabalarning ismlarini bitta katakka jamlab ko'rsatish
+SELECT 
+    yonalish, 
+    STRING_AGG(ism, ', ') AS talabalar_royxati
+FROM talabalar
+GROUP BY yonalish;
+WHERE, GROUP BY va HAVING birgalikda
+Ushbu uchta operator bitta so'rovda kelganda qat'iy ketma-ketlikda yoziladi:
+
+SQL
+-- 1. Yoshi 20 dan katta talabalarni saralash (WHERE)
+-- 2. Ularni yo'nalish bo'yicha guruhlash (GROUP BY)
+-- 3. Guruh ichida talabalar soni 1 tadan ko'p bo'lganlarini qoldirish (HAVING)
+SELECT 
+    yonalish, 
+    COUNT(*) AS talabalar_soni,
+    ROUND(AVG(joriy_ball), 2) AS ortacha_ball
+FROM talabalar
+WHERE yosh > 20
+GROUP BY yonalish
+HAVING COUNT(*) > 1;
+3. Eng ko'p qilinadigan xato: GROUP BY guruhiga kirmagan oddiy ustunni SELECT ga yozish
 Xato kod (Ishlamaydi!):
 SQL
--- XATO: O'rtacha balldan yuqori bo'lgan talabalarni topishga urinish
-SELECT ism, joriy_ball 
-FROM talabalar 
-WHERE joriy_ball > AVG(joriy_ball); 
-PostgreSQL beradigan xatolik xabari: ERROR: aggregate functions are not allowed in WHERE
+-- XATO: 'ism' ustuni GROUP BY ichida yo'q va hech qanday agregat funksiyaga olingan emas
+SELECT yonalish, ism, AVG(joriy_ball) 
+FROM talabalar
+GROUP BY yonalish;
+PostgreSQL beradigan xatolik xabari: ERROR: column "talabalar.ism" must appear in the GROUP BY clause or be used in an aggregate function
 
 Sababi nimada?
-SQL so'rovlarining bajarilish tartibi (Logical Query Processing) mavjud. WHERE operatori jadvaldagi qatorlarni hali agregat funksiyalar hisoblanmasdan oldin (guruhlash va umumlashtirishdan avval) birma-bir elakdan o'tkazadi.
+Siz bazadan ma'lumotlarni yonalish bo'yicha guruhlashni so'rayapsiz. Masalan, "Dasturlash" yo'nalishida 4 ta talaba bor. AVG(joriy_ball) funksiyasi shu 4 ta talabaning balini qo'shib, bitta raqam (o'rtacha qiymat) qilib beradi.
 
-AVG(joriy_ball) ni hisoblash uchun esa bazaga barcha qatorlarning qiymati kerak. WHERE ishlayotgan vaqtda hali umumiy o'rtacha ball qanchaligi ma'lum bo'lmagani uchun, SQL bu so'rovni bajara olmaydi.
+Lekin siz bitta qatorga siqilgan "Dasturlash" guruhi yoniga ism ustunini ham chiqarmoqchisiz. SQL o'sha guruh ichidagi 4 ta har xil ismdan (Anvar, Diyora, Zilola, Kamola) aynan qaysi birini ko'rsatishni bilmaydi (chunki qatorlar soni mos kelmaydi).
 
-To'g'ri yechim (Subquery yoki HAVING):
-Buning uchun Subquery (ichma-ich so'rov) ishlatish kerak:
+To'g'ri yechish qoidasi:
+Agar so'rovda GROUP BY ishlatilsa, SELECT qismida faqat quyidagilar bo'lishi mumkin:
 
-SQL
--- TO'G'RI: Avval o'rtacha ball hisoblanadi, keyin WHERE orqali solishtiriladi
-SELECT ism, joriy_ball 
-FROM talabalar 
-WHERE joriy_ball > (SELECT AVG(joriy_ball) FROM talabalar);
+GROUP BY guruhiga kiritilgan ustunlar (masalan: yonalish).
+
+Agregat funksiyaga olingan ustunlar (masalan: AVG(joriy_ball) yoki STRING_AGG(ism, ', ')).
