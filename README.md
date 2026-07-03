@@ -1,53 +1,81 @@
 # SQL-va-PostgreSQL-Asoslari-2
-PostgreSQL-da so'ralgan hisobotlar va vazifalarni bajarish uchun tayyor SQL so'rovlari quyida keltirilgan. Har bir so'rovning vazifasi tepasidagi sharhlar (-- comment) orqali tushuntirilgan.
+1. Agregat va Statistik Funksiyalar
+COUNT(*) va COUNT(DISTINCT) farqi
+COUNT(*) — jadvaldagi umumiy qatorlar sonini (shu jumladan NULL va takrorlanadigan qatorlarni) hisoblaydi.
+
+COUNT(DISTINCT ustun) — faqat unikal (takrorlanmaydigan) va NULL bo'lmagan qiymatlar sonini hisoblaydi.
 
 SQL
--- 1. Top-3 a'lochi: Eng yuqori ball to'plagan 3 ta talabaning ismi va bali
+-- Talabalarning umumiy soni va yo'nalishlarning takrorsiz soni
+SELECT 
+    COUNT(*) AS jami_talabalar,
+    COUNT(DISTINCT yonalish) AS unikal_yonalishlar
+FROM talabalar;
+To'liq statistika va ROUND bilan yumaloqlash
+SUM, AVG, MIN, MAX funksiyalari orqali umumiy statistikani chiqarish va ROUND funksiyasi yordamida kasr qismni (masalan, verguldan keyin 2 ta raqamgacha) yumaloqlash:
+
+SQL
+SELECT 
+    SUM(joriy_ball) AS umumiy_ball,
+    ROUND(AVG(joriy_ball), 2) AS ortacha_ball,
+    MIN(joriy_ball) AS eng_past_ball,
+    MAX(joriy_ball) AS eng_yuqori_ball
+FROM talabalar;
+2. Matn (String) va Matematik Funksiyalar
+Matn funksiyalari (UPPER, LENGTH, ||)
+SQL
+-- Ism-familiyani katta harflarda birlashtirish va yo'nalish matni uzunligini o'lchash
+SELECT 
+    UPPER(ism || ' ' || familiya) AS toliq_ism_katta,
+    yonalish,
+    LENGTH(yonalish) AS yonalish_harflar_soni
+FROM talabalar;
+Matematik funksiyalar (CEIL, FLOOR, MOD)
+CEIL(x) — eng yaqin katta butun songa qarab yaxlitlaydi.
+
+FLOOR(x) — eng yaqin kichik butun songa qarab yaxlitlaydi.
+
+MOD(x, y) — bo'lishdan chiqqan qoldiqni hisoblaydi.
+
+SQL
+-- Ballarni yuqoriga/pastga yaxlitlash va yoshni 2 ga bo'lgandagi qoldiq (toq/juftlik)
+SELECT 
+    joriy_ball,
+    CEIL(joriy_ball) AS yuqoriga_yaxlit,
+    FLOOR(joriy_ball) AS pastga_yaxlit,
+    yosh,
+    MOD(yosh, 2) AS yosh_qoldig_i
+FROM talabalar;
+3. Sana va Vaqt Funksiyalari (NOW, CURRENT_DATE, EXTRACT)
+PostgreSQL-da joriy vaqtni aniqlash va sananing ma'lum qismlarini ajratib olish:
+
+SQL
+SELECT 
+    NOW() AS joriy_vaqt_va_sana,          -- To'liq vaqt (miqyosi bilan)
+    CURRENT_DATE AS bugungi_sana,         -- Faqat sana (yil-oy-kun)
+    EXTRACT(YEAR FROM NOW()) AS joriy_yil, -- Faqat yilni ajratib olish
+    EXTRACT(MONTH FROM NOW()) AS joriy_oy  -- Faqat oyni ajratib olish
+FROM talabalar 
+LIMIT 1; -- Faqat 1 marta chiqishi uchun
+4. Eng ko'p qilinadigan xato: WHERE ichida Agregat funksiya ishlatish
+Xato kod (Ishlamaydi!):
+SQL
+-- XATO: O'rtacha balldan yuqori bo'lgan talabalarni topishga urinish
 SELECT ism, joriy_ball 
 FROM talabalar 
-ORDER BY joriy_ball DESC 
-LIMIT 3;
+WHERE joriy_ball > AVG(joriy_ball); 
+PostgreSQL beradigan xatolik xabari: ERROR: aggregate functions are not allowed in WHERE
 
+Sababi nimada?
+SQL so'rovlarining bajarilish tartibi (Logical Query Processing) mavjud. WHERE operatori jadvaldagi qatorlarni hali agregat funksiyalar hisoblanmasdan oldin (guruhlash va umumlashtirishdan avval) birma-bir elakdan o'tkazadi.
 
--- 2. Filterlangan + tartiblangan ro'yxat: Dasturlash yo'nalishidagi balli 80 dan yuqori talabalarni yoshi bo'yicha o'sish tartibida chiqarish
-SELECT ism, familiya, yosh, yonalish, joriy_ball 
+AVG(joriy_ball) ni hisoblash uchun esa bazaga barcha qatorlarning qiymati kerak. WHERE ishlayotgan vaqtda hali umumiy o'rtacha ball qanchaligi ma'lum bo'lmagani uchun, SQL bu so'rovni bajara olmaydi.
+
+To'g'ri yechim (Subquery yoki HAVING):
+Buning uchun Subquery (ichma-ich so'rov) ishlatish kerak:
+
+SQL
+-- TO'G'RI: Avval o'rtacha ball hisoblanadi, keyin WHERE orqali solishtiriladi
+SELECT ism, joriy_ball 
 FROM talabalar 
-WHERE yonalish = 'Dasturlash' AND joriy_ball > 80 
-ORDER BY yosh ASC;
-
-
--- 3. Takrorsiz sinflar (yo'nalishlar) ro'yxati: Universitetdagi barcha unikal yo'nalishlarni alifbo tartibida chiqarish
-SELECT DISTINCT yonalish 
-FROM talabalar 
-ORDER BY yonalish ASC;
-
-
--- 4. Yo'qotgan kunlar (kiritilmagan ma'lumotlar) bo'yicha hisobot: Yoshi yoki yo'nalishi kiritilmagan (NULL bo'lgan) talabalar ro'yxati
-SELECT id, ism, familiya, yosh, yonalish 
-FROM talabalar 
-WHERE yosh IS NULL OR yonalish IS NULL;
-
-
--- 5. Eng yosh va eng katta yoshli talabalar: UNION ALL orqali eng kichik va eng katta yoshli talabalarni bitta jadvalda birlashtirish
-(SELECT 'Eng yosh talaba' AS status, ism, familiya, yosh FROM talabalar WHERE yosh IS NOT NULL ORDER BY yosh ASC LIMIT 1)
-UNION ALL
-(SELECT 'Eng katta yoshli talaba' AS status, ism, familiya, yosh FROM talabalar WHERE yosh IS NOT NULL ORDER BY yosh DESC LIMIT 1);
-
-
--- 6. Sahifa 2 (LIMIT/OFFSET): Har bir sahifada 3 tadan talaba chiqarilganda, 2-sahifadagi ma'lumotlarni ko'rish (OFFSET = (2-1)*3 = 3)
-SELECT id, ism, familiya 
-FROM talabalar 
-ORDER BY id ASC 
-LIMIT 3 OFFSET 3;
-
-
--- 7. Bonus: Dasturlash yo'nalishidagi (shartli ravishda eng yuqori guruh/sinf) top-5 a'lochi talabalar ro'yxati
-SELECT ism, familiya, yonalish, joriy_ball 
-FROM talabalar 
-WHERE yonalish = 'Dasturlash' 
-ORDER BY joriy_ball DESC 
-LIMIT 5;
-Qisqa tushuntirish:
-UNION ALL operatori ikkita alohida SELECT so'rovi natijasini bitta jadvalga ketma-ket birlashtiradi. Birinchi qism eng kichik yoshni, ikkinchi qism esa eng katta yoshni topib, natijani umumlashtiradi.
-
-LIMIT 3 OFFSET 3 so'rovi dastlabki 3 ta qatorni tashlab yuborib (OFFSET), keyingi 3 ta qatorni (LIMIT) ekranga chiqaradi, bu esa aniq 2-sahifani shakllantiradi.
+WHERE joriy_ball > (SELECT AVG(joriy_ball) FROM talabalar);
